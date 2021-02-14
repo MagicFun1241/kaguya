@@ -1,0 +1,15 @@
+{
+    "compilerOptions": {
+      "allowJs": true,
+      "outDir": "./build",
+      "downlevelIteration": true,
+      "sourceMap": true,
+      "module": "commonjs",
+      "moduleResolution": "node",
+      "importHelpers": true,
+      "target": "es6"
+    },
+    "include": [
+      "./src"
+    ]
+}
