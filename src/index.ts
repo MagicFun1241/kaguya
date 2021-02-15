@@ -53,14 +53,16 @@ type Chapters = {
     };
 };
 
-function getSeries(name: string) {
-    return new Promise<{
-        next_release_time: number;
-        description: string;
-        cover: string;
+interface Series {
+    next_release_time: number;
+    description: string;
+    cover: string;
 
-        chapters: Chapters;
-    }>(resolve => {
+    chapters: Chapters;
+}
+
+function fetchSeries(name: string) {
+    return new Promise<Series>(resolve => {
         axios.get(`https://guya.moe/api/series/${name}/`).then(r => {
             resolve(r.data);
         });
@@ -121,6 +123,8 @@ const series = Datastore.create({
     filename: join(process.cwd(), "storage", 'series.db'),
     autoload: true
 });
+
+const seriesCache = new Map<string, Pick<Series, "chapters">>();
 
 const bot = new Telegraf(process.env.TOKEN);
 
@@ -248,42 +252,42 @@ bot.on("callback_query", ctx => {
 
         case Actions.ReadSeries:
             if (data.p.c == null) {
-                getSeries(resolveSeriesName(data.p.s)).then(({ chapters }) => {
-                    const keys = Object.keys(chapters);
-                    const chunks = getChunks(keys);
-                    const buttons = chunks.slice(data.p.cp, data.p.cp + 3).map(chunk => chunk.map((chapter) => Key.callback(chapter, JSON.stringify({
-                        a: Actions.ReadSeries,
-                        p: {
-                            s: data.p.s,
-                            c: chapter,
-                            p: 0
-                        }
-                    }))));
+                const { chapters } = seriesCache.get(resolveSeriesName(data.p.s));
 
-                    buttons.push(data.p.cp > 0 ? [ Key.callback("Назад", JSON.stringify({
-                        a: Actions.ReadSeries,
-                        p: {
-                            s: data.p.s,
-                            cp: data.p.cp - 1
-                        }
-                    })), Key.callback("Вперед", JSON.stringify({
-                        a: Actions.ReadSeries,
-                        p: {
-                            s: data.p.s,
-                            cp: data.p.cp + 1
-                        }
-                    })) ] : [ Key.callback("Вперед", JSON.stringify({
-                            a: Actions.ReadSeries,
-                            p: {
-                                s: data.p.s,
-                                cp: data.p.cp + 1
-                            }
-                        }))
-                    ]);
+                const keys = Object.keys(chapters);
+                const chunks = getChunks(keys);
+                const buttons = chunks.slice(data.p.cp, data.p.cp + 3).map(chunk => chunk.map((chapter) => Key.callback(chapter, JSON.stringify({
+                    a: Actions.ReadSeries,
+                    p: {
+                        s: data.p.s,
+                        c: chapter,
+                        p: 0
+                    }
+                }))));
 
-                    ctx.editMessageText(`Выберите главу (${keys.length} всего).\nСтраница ${data.p.cp+1} из ${chunks.length}`, Keyboard.make(buttons).inline() as any);
-                    ctx.answerCbQuery();
-                });
+                buttons.push(data.p.cp > 0 ? [ Key.callback("Назад", JSON.stringify({
+                    a: Actions.ReadSeries,
+                    p: {
+                        s: data.p.s,
+                        cp: data.p.cp - 1
+                    }
+                })), Key.callback("Вперед", JSON.stringify({
+                    a: Actions.ReadSeries,
+                    p: {
+                        s: data.p.s,
+                        cp: data.p.cp + 1
+                    }
+                })) ] : [ Key.callback("Вперед", JSON.stringify({
+                    a: Actions.ReadSeries,
+                    p: {
+                        s: data.p.s,
+                        cp: data.p.cp + 1
+                    }
+                }))
+                ]);
+
+                ctx.editMessageText(`Выберите главу (${keys.length} всего).\nСтраница ${data.p.cp+1} из ${chunks.length}`, Keyboard.make(buttons).inline() as any);
+                ctx.answerCbQuery();
             } else if (data.p.p != null) { // Если задана страница
                 const seriesName = resolveSeriesName(data.p.s);
 
@@ -336,8 +340,12 @@ bot.launch().then(async () => {
             list.forEach(({ key, _id }) => {
                 putSeriesId(key, _id); // Для более быстрого доступа в будущем
 
-                getSeries(key).then(({ next_release_time, chapters: fetchedChapters }) => {
-                    const chapters = Object.keys(fetchedChapters).map(e => (parseInt(e))).sort((a,b) => (a - b));
+                fetchSeries(key).then(s => {
+                    seriesCache.set(key, {
+                        chapters: s.chapters
+                    }); // Держим в памяти
+
+                    const chapters = Object.keys(s.chapters).map(e => (parseInt(e))).sort((a,b) => (a - b));
 
                     if (check) {
                         series.findOne<Series>({ key }, { name: 1, lastChapter: 1 }).then(({ name, lastChapter }) => {
@@ -348,7 +356,7 @@ bot.launch().then(async () => {
                                     series.update<Series>({ key }, {
                                         $set: {
                                             lastChapter,
-                                            nextReleaseTime: next_release_time
+                                            nextReleaseTime: s.next_release_time
                                         }
                                     }).then(() => {
                                         Promise.all(subs.map(sub => bot.telegram.sendMessage(sub.chatId, `Вышла глава №${lastChapter} из серии ${name}`)));
@@ -358,7 +366,7 @@ bot.launch().then(async () => {
                         });
                     } else {
                         let lastChapter = chapters[chapters.length - 1];
-                        let nextReleaseTime = next_release_time;
+                        let nextReleaseTime = s.next_release_time;
 
                         series.update<Series>({ key }, {
                             $set: {

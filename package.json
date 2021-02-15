@@ -5,7 +5,7 @@
   "main": "build/index.js",
   "scripts": {
     "start": "pm2 start",
-    "start:cli": "node build/index.js",
+    "start:cli": "node scripts/cli.js",
     "series:insert": "node scripts/insert.js",
     "build": "tsc"
   },
@@ -30,6 +30,7 @@
   "devDependencies": {
     "@types/download": "^6.2.4",
     "@types/node": "^14.14.25",
+    "cross-env": "^7.0.3",
     "typescript": "^4.1.3"
   }
 }

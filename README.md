@@ -5,7 +5,7 @@ Pretty telegram bot that has:
 
 ## How to run
 ### Prepare
-Open **ecosystem.config.js** and change **"TOKEN"** property to your bot token and then execute:
+Open **config.json** and change **"token"** property to your bot token and then execute:
 ```bash
 npm install
 npm run build
